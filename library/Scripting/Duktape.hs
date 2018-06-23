@@ -164,7 +164,7 @@ exposeFnDuktape ∷ (MonadIO μ, Duktapeable ξ)
                 → Maybe BS.ByteString -- ^ The name of the object that will contain the function (Nothing is the global object)
                 → BS.ByteString -- ^ The function name
                 → ξ -- ^ The function itself
-                → μ (Either String ())
+                → μ (Either String (IO ()))
 exposeFnDuktape ctx oname fname f =
   liftIO $ withCtx ctx $ \ctxPtr →
     BS.useAsCString fname $ \fnameCstr → do
@@ -172,7 +172,8 @@ exposeFnDuktape ctx oname fname f =
       if oVal
          then do
            wrapped ← c_wrapper $ runInDuktape 0 f
+           let releaser = freeHaskellFunPtr wrapped
            void $ c_duk_push_c_function ctxPtr wrapped $ fromIntegral $ argCount f
            void $ c_duk_put_prop_string ctxPtr (-2) fnameCstr
-           pop ctxPtr $ Right ()
+           pop ctxPtr $ Right releaser
          else pop ctxPtr $ Left $ "Nonexistent property of global object: " ++ show oname

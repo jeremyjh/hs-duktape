@@ -53,11 +53,16 @@ And expose Haskell functions (same as with calls: set on global or a property of
 dukm <- createDuktapeCtx
 let dbl (Number x) = return $ Number $ x * 2 ∷ IO Value
     dbl _ = return $ String "wtf"
-reD ← exposeFnDuktape (fromJust ctx) Nothing "double" dbl 
+Right release ← exposeFnDuktape (fromJust ctx) Nothing "double" dbl 
 ```
 
 The functions must be of type `IO ()`, `IO Value`, `Value -> IO Value`, `Value -> Value -> IO Value`... and so on.
 (Or with any `ToJSON`/`FromJSON` values instead of `Value`)
+
+### Cleanup
+Applications that have fixed Duktape heaps that live as long as the program process do not need to worry about this, but applications that are frequently creating new contexts and exposing Haskell functions to them need to release the memory GHC allocates for these function pointers.
+
+When it succeeds, `exposeFnDuktape` returns an IO action `IO ()` to perform this release - you would need to evaluate each action returned by an `exposeFnDuktape` call after you are completely done with the `DuktapeCtx` they were bound to!
 
 [Aeson]: https://hackage.haskell.org/package/aeson
 [lens-aeson]: https://hackage.haskell.org/package/lens-aeson
