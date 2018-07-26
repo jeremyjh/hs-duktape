@@ -8,8 +8,8 @@ import           Foreign.C.Types
 import           Foreign.C.String
 import           Foreign.Ptr
 import           Foreign.ForeignPtr hiding (newForeignPtr, addForeignPtrFinalizer)
-import           Foreign.Concurrent (newForeignPtr, addForeignPtrFinalizer)
-import           Control.Concurrent.MVar (withMVar, newMVar, MVar)
+import           Foreign.Concurrent (newForeignPtr)
+import           Control.Concurrent.MVar (newMVar, MVar)
 
 
 foreign import capi "duktape.h value DUK_TYPE_NONE"      c_DUK_TYPE_NONE ∷ CInt
@@ -179,27 +179,27 @@ foreign import capi safe "duktape.h duk_push_context_dump"
 nullUData ∷ InternalUData
 nullUData = InternalUData nullPtr
 
-createHeap ∷ FunPtr DukAllocFunction → FunPtr DukReallocFunction → FunPtr DukFreeFunction → InternalUData → FunPtr DukFatalFunction → IO (Maybe DuktapeCtx)
-createHeap allocf reallocf freef udata fatalf = do
+type PostFinalizer = Maybe (IO ())
+
+createHeap ∷ FunPtr DukAllocFunction → FunPtr DukReallocFunction → FunPtr DukFreeFunction → InternalUData → FunPtr DukFatalFunction → PostFinalizer -> IO (Maybe DuktapeCtx)
+createHeap allocf reallocf freef udata fatalf mpost = do
   ptr ← c_duk_create_heap allocf reallocf freef (getInternalUData udata) fatalf
   if ptr /= nullPtr
-     then newForeignPtr ptr (c_duk_destroy_heap ptr) >>= newMVar >>= return . Just
+     then newForeignPtr ptr (c_duk_destroy_heap ptr >> post) >>= newMVar >>= return . Just
      else return Nothing
+  where post = case mpost of
+          Just finalizer -> finalizer
+          Nothing -> return ()
 
 createHeapF ∷ FunPtr DukFatalFunction → IO (Maybe DuktapeCtx)
-createHeapF = createHeap nullFunPtr nullFunPtr nullFunPtr nullUData
+createHeapF f = createHeap nullFunPtr nullFunPtr nullFunPtr nullUData f Nothing
 
 -- | A TimeoutCheck is an IO action that returns True when the current script evaluation
 -- should timeout (interpreter throws RangeError).
-createGovernedHeap ∷ FunPtr DukAllocFunction → FunPtr DukReallocFunction → FunPtr DukFreeFunction → TimeoutCheck → FunPtr DukFatalFunction → IO (Maybe DuktapeCtx)
-createGovernedHeap allocf reallocf freef timeoutCheck fatalf = do
+createGovernedHeap ∷ FunPtr DukAllocFunction → FunPtr DukReallocFunction → FunPtr DukFreeFunction → TimeoutCheck → FunPtr DukFatalFunction → PostFinalizer -> IO (Maybe DuktapeCtx)
+createGovernedHeap allocf reallocf freef timeoutCheck fatalf mpost = do
   (udata, release) ← wrapTimeoutCheckUData timeoutCheck
-  mctx ← createHeap allocf reallocf freef udata fatalf
-  case mctx of
-    Just ctx → withMVar ctx $ \fptr → do
-      addForeignPtrFinalizer fptr release
-      return mctx
-    Nothing → return Nothing
+  createHeap allocf reallocf freef udata fatalf (Just $ release >> post)
   where
   -- TimeoutCheck is wrapped to pass as void* udata in `createHeap` and will be provided (by duktape)
   -- back to `execTimeoutCheck` when the interpreter invokes that callback.
@@ -210,3 +210,6 @@ createGovernedHeap allocf reallocf freef timeoutCheck fatalf = do
     poke ptr wrapped
     let finalizers = free ptr >> freeHaskellFunPtr wrapped
     return (InternalUData $ castPtr ptr, finalizers)
+  post = case mpost of
+    Just finalizer -> finalizer
+    Nothing -> return ()

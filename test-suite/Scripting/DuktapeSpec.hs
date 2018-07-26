@@ -102,7 +102,7 @@ function objTest (obj) { return obj.name + obj.stuff.filter(function (x) { retur
   describe "createGovernedHeap" $ do
     it "applies CheckTimeout to signal the runtime to terminate with RangeError" $ do
       guvnor ← allowQuarterSecond
-      ctx ← createGovernedHeap nullFunPtr nullFunPtr nullFunPtr guvnor nullFunPtr
+      ctx ← createGovernedHeap nullFunPtr nullFunPtr nullFunPtr guvnor nullFunPtr Nothing
       rE ← evalDuktape (fromJust ctx) "while(true) {};"
       rE `shouldBe` Left "RangeError: execution timeout"
 
