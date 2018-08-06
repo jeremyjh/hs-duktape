@@ -57,6 +57,21 @@ execTimeoutCheck udata = if udata == nullPtr then return 0 else invoke
       result ← unwrapTimeoutCheck action
       return $ if result then 1 else 0
 
+-- custom allocator utils
+
+#if darwin_BUILD_OS
+foreign import capi safe "malloc/malloc.h malloc_size"
+  c_malloc_size :: Ptr () -> IO CSize
+#endif
+#if linux_BUILD_OS
+foreign import capi safe "malloc.h malloc_usable_size"
+  c_malloc_size :: Ptr () -> IO CSize
+#endif
+#if win32_BUILD_OS
+foreign import capi safe "malloc.h _msize"
+  c_malloc_size :: Ptr () -> IO CSize
+#endif
+
 -- FunPtr wrappers / unwrappers
 
 foreign import ccall safe "wrapper"
@@ -67,6 +82,15 @@ foreign import ccall "dynamic"
 
 foreign import ccall safe "wrapper"
   wrapTimeoutCheck ∷ (IO Bool) → IO TimeoutCheckWrapped
+
+foreign import ccall safe "wrapper"
+  mk_duk_alloc :: DukAllocFunction -> IO (FunPtr DukAllocFunction)
+
+foreign import ccall safe "wrapper"
+  mk_duk_realloc :: DukReallocFunction -> IO (FunPtr DukReallocFunction)
+
+foreign import ccall safe "wrapper"
+  mk_duk_free :: DukFreeFunction -> IO (FunPtr DukFreeFunction)
 
 -- Heap lifecycle
 
